@@ -1,4 +1,5 @@
 import serial
+import smtplib, ssl
 
 # Configuracion del puerto serial
 com_serial = serial.Serial('/dev/ttyUSB0', timeout=1, baudrate=115200, bytesize=8, parity='N', stopbits=1, xonxoff=False, rtscts=False, dsrdtr=False)
@@ -102,6 +103,22 @@ while sensorstatus // 2 != 0:
 # Tratamiento datos STATISTICS
 statdata = statistics[3:statistics[1]+2]
 totalcount = (statdata[0]<<24 | statdata[1]<<16 | statdata[2]<<8 | statdata[3])
+
+# Envio notificacion correo
+port = 465  # For SSL
+smtp_server = "smtp.gmail.com"
+sender_email = ""  # Enter your address
+receiver_email = ""  # Enter receiver address
+password = ""
+message = """\
+Subject: "Notificacion CBM"
+
+Total de billetes contados: """+str(totalcount)
+
+context = ssl.create_default_context()
+with smtplib.SMTP_SSL(smtp_server, port, context=context) as server:
+    server.login(sender_email, password)
+    server.sendmail(sender_email, receiver_email, message)
 
 
 print ('Moneda Actual:' + currencies[actualcurr])
