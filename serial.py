@@ -1,43 +1,69 @@
 import serial
 
-
+# Configuracion del puerto serial
 com_serial = serial.Serial('/dev/ttyUSB0', timeout=1, baudrate=115200, bytesize=8, parity='N', stopbits=1, xonxoff=False, rtscts=False, dsrdtr=False)
 
-
+# Declaracion de listas
 status = []
 statusraw = []
+statisticsraw = []
+statistics = []
+statdata=[]
+
+# Declaracion de comandos
+CMD_PC_CTRL_START = [0x02,0x02,0x01,0x01,0x03,0xFB]
+CMD_PC_CTRL_STOP = [0x02,0x01,0x02,0x03,0xFC]
+CMD_PC_CTRL_STATISTICS = [0x02,0x02,0x20,0x00,0x03,0xDD]
+
+# Declarcion de listas para interpretar los datos
+BosilloR = ['Libre','Ocupado']
+Puerta = ['Cerrada','Abierta']
+Modos = ['Mezcla','Denominacion','Cuentanotas','Cara','Orientacion','Issue','Serial','Separate','Barcode','Barcode + Efectivo','','Dissue']
+Lote = ['100','50','25','20','10','Batch Apagado','Batch por numero personalizado','Batch por monto']
 
 #Send CMD_PC_CTRL_STOP
-CMD_PC_CTRL_STOP = "\x02\x01\x02\x03\xFC"
-com_serial.write(CMD_PC_CTRL_STOP)
-
+com_serial.write(serial.to_bytes(CMD_PC_CTRL_STOP))
 
 #Send CMD_PC_CTRL_START
-CMD_PC_CTRL_START = "\x02\x02\x01\x01\x03\xFB"
-com_serial.write(CMD_PC_CTRL_START)
+com_serial.write(serial.to_bytes(CMD_PC_CTRL_START))
 
+# Lectura de datos recibidos DEVICE STATUS y SENSOR STATUS
 read_byte = com_serial.read()
-status.append(ord(read_byte))
 statusraw.append(read_byte)
-
+status.append(int.from_bytes(read_byte, "big"))
 while read_byte is not None:
     read_byte = com_serial.read()
-    if read_byte == '':
+    if read_byte == b'':
         read_byte = None
         break
-    status.append(ord(read_byte))
     statusraw.append(read_byte)
+    status.append(int.from_bytes(read_byte, "big"))
 
-l = len(status)
-device = status[0:status[1]+4]
-sensor = status[status[1]+4:l]
+# Separacion de los resultados leidos en DEVICE y SENSOR
+l = len(statusraw)
+length1 = status[1]
+device = status[0:length1+4]
+sensor = status[length1+4:l]
 
+# Envio de solicitud de STATISTICS
+com_serial.write(serial.to_bytes(CMD_PC_CTRL_STATISTICS))
 
+# Lectura de datos recibidos STATISTICS
+read_byte = com_serial.read()
+statistics.append(int.from_bytes(read_byte, "big"))
+statisticsraw.append(read_byte)
+while read_byte is not None:
+    read_byte = com_serial.read()
+    if read_byte == b'':
+        read_byte = None
+        break
+    statisticsraw.append(read_byte)
+    statistics.append(int.from_bytes(read_byte, "big"))
 
-#Send CMD_PC_CTRL_STOP
-CMD_PC_CTRL_STOP = "\x02\x01\x02\x03\xFC"
-com_serial.write(CMD_PC_CTRL_STOP)
+# Envio solicitud CMD_PC_CTRL_STOP
+com_serial.write(serial.to_bytes(CMD_PC_CTRL_STOP))
 
+# Tratamiento de datos DEVICE STATUS
 ndata = device[1]-1
 actualcurr = device[3]
 dataindex = device[4]
@@ -53,17 +79,16 @@ for j in range(currn):
     for k in range(3):
         currencies[j] = currencies[j]+chr(device[10+j*3+k])
         i = i + 1
-
 ndenom = []
 for j in range(currn-1):
     ndenom.append(device[i])
     i = i + 1
-
 cant_batch = []
 for j in range(ndata-i+3):
     cant_batch.append(device[i])
     i = i + 1
 
+# Tratamiento datos SENSOR STATUS
 sensores = [0,0,0,0,0,0,0,0]
 sensorstatus = sensor[3]
 i=0
@@ -74,23 +99,18 @@ while sensorstatus // 2 != 0:
     if sensorstatus == 1:
         sensores[i]=sensorstatus % 2
 
-BosilloR = ['Libre','Ocupado']
-Puerta = ['Cerrada','Abierta']
-Modos = ['Mezcla','Denominacion','Cuentanotas','Cara','Orientacion','Issue','Serial','Separate','Barcode','Barcode + Efectivo','','Dissue']
-Lote = ['100','50','25','20','10','Batch Apagado','Batch por numero personalizado','Batch por monto']
-print 'Moneda Actual:' + currencies[actualcurr]
-print 'Modo de conteo:' + Modos[modeindex]
-print 'Modo de batch:' + Lote[batchindex]
-print 'Cantidad de monedas instaladas: ' + str(currn-2)
-print 'Estado de bolsillo de rechazo: ' + BosilloR[sensores[7]]
-print 'Estado de bandeja de entrada: ' + BosilloR[sensores[5]]
-print 'Estado de apilador: ' + BosilloR[sensores[6]]
-print 'Estado de puerta superior: ' + Puerta[sensores[0]]
-print 'Estado de apilador: ' + Puerta[sensores[2]]
+# Tratamiento datos STATISTICS
+statdata = statistics[3:statistics[1]+2]
+totalcount = (statdata[0]<<24 | statdata[1]<<16 | statdata[2]<<8 | statdata[3])
 
-# print sensores
-# print statusraw
-# print status
-# # print cant_batch
-# # print statusraw
-# # print status
+
+print ('Moneda Actual:' + currencies[actualcurr])
+print ('Modo de conteo:' + Modos[modeindex])
+print ('Modo de batch:' + Lote[batchindex])
+# print (totalcount)
+# print ('Cantidad de monedas instaladas: ' + str(currn-2))
+# print ('Estado de bolsillo de rechazo: ' + BosilloR[sensores[7]])
+# print ('Estado de bandeja de entrada: ' + BosilloR[sensores[5]])
+# print ('Estado de apilador: ' + BosilloR[sensores[6]])
+# print ('Estado de puerta superior: ' + Puerta[sensores[0]])
+# print ('Estado de inferior: ' + Puerta[sensores[2]])
